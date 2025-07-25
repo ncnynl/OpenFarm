@@ -1,55 +1,61 @@
-#-*- coding: utf-8 -*-
 #!/usr/bin/env bash
+set -e
 
-sudo apt-get update
+# 载入版本变量
+source /vagrant/scripts/versions.env
 
-sudo aptitude    update
-sudo aptitude -y -q=2 upgrade
-sudo aptitude install -y -q=2 build-essential
-sudo aptitude install -y -q=2 cvs git-core
+echo ">>> 更新系统"
+sudo apt-get update -qq
+sudo apt-get upgrade -y -qq
 
-sudo apt-get -y -q=2 install git
+echo ">>> 安装基础工具"
+sudo apt-get install -y -qq build-essential curl git gnupg2 software-properties-common
 
-sudo apt-get -y -q=2 install libcurl3 libcurl3-gnutls libcurl4-openssl-dev
+# 安装 RVM 和 Ruby
+if ! command -v rvm >/dev/null 2>&1; then
+  echo ">>> 安装 RVM"
+  gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys D39DC0E3
+  curl -sSL https://get.rvm.io | bash -s stable
+fi
 
-echo "OKAY - GOING TO INSTALL OUR OWN THINGS NOW"
+source /etc/profile.d/rvm.sh
 
-echo "--- INSTALLING RVM ---"
+echo ">>> 安装 Ruby $RUBY_VERSION"
+rvm install "$RUBY_VERSION"
+rvm use "$RUBY_VERSION" --default
 
-gpg --keyserver hkp://pool.sks-keyservers.net:80 --recv-keys D39DC0E3
+echo ">>> 安装 Bundler"
+gem install bundler -N
 
-curl -sSL https://get.rvm.io | bash -s stable --quiet-curl --ruby=2.6.3
+# 安装 Node.js
+curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
-echo "--- INSTALLING RUBY 2.6.1 ---"
+# 安装 Elasticsearch
+echo ">>> 安装 Elasticsearch $ELASTIC_VERSION"
+wget -q https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-${ELASTIC_VERSION}-amd64.deb
+sudo dpkg -i elasticsearch-${ELASTIC_VERSION}-amd64.deb
+sudo systemctl enable elasticsearch
+sudo systemctl start elasticsearch
 
-source /home/vagrant/.rvm/scripts/rvm
+# 安装 MongoDB 官方仓库
+echo ">>> 安装 MongoDB $MONGODB_VERSION"
+wget -qO - https://www.mongodb.org/static/pgp/server-${MONGODB_VERSION}.asc | sudo apt-key add -
+echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/${MONGODB_VERSION} multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-${MONGODB_VERSION}.list
+sudo apt-get update -qq
+sudo apt-get install -y mongodb-org
+sudo systemctl enable mongod
+sudo systemctl start mongod
 
-rvm reload
-rvm --default use 2.6.3
-
-echo "--- INSTALLING ELASTICSEARCH ---"
-
-sudo apt-get -y -q=2 install openjdk-7-jre-headless -y
-
-wget --quiet https://download.elasticsearch.org/elasticsearch/release/org/elasticsearch/distribution/deb/elasticsearch/2.0.0/elasticsearch-2.0.0.deb
-sudo dpkg -i elasticsearch-2.0.0.deb
-sudo service elasticsearch start
-
-echo "--- INSTALLING MONGODB ---"
-
-sudo apt-get -y -q=2 install mongodb
-
-sudo mkdir /data/ && sudo mkdir /data/db/
-sudo chown -R vagrant /data/db
-sudo service mongodb start
-
-echo "--- OPEN FARM - getting there! ---"
-
+echo ">>> 安装 Ruby Gems 依赖"
 cd /vagrant
-
-gem install bundler
-gem install activesupport -v '4.0.2'
-
 bundle install
-rake db:setup
-echo "ENV['SECRET_KEY_BASE'] = '$(rake secret)'" >> config/app_environment_variables.rb
+
+echo ">>> 运行数据库初始化"
+bundle exec rake db:setup
+
+echo ">>> 生成 SECRET_KEY_BASE"
+SECRET_KEY=$(bundle exec rake secret)
+echo "ENV['SECRET_KEY_BASE'] = '${SECRET_KEY}'" >> config/app_environment_variables.rb
+
+echo ">>> 完成环境搭建"
