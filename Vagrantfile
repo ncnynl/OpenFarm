@@ -1,29 +1,27 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-VAGRANTFILE_API_VERSION = "2"
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"  # 22.04 LTS 最新官方版
+  config.vm.box_version = "20230717.0.0"
 
-Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
-  # 新版 Ubuntu
-  config.vm.box = "ubuntu/24.04"
-
-  # 使用 2GB 内存
   config.vm.provider :virtualbox do |vb|
-    vb.customize ["modifyvm", :id, "--memory", "2048"]
-    vb.name = "vagrant-ubuntu-2404"
+    vb.memory = "2048"
+    vb.cpus = 2
+    vb.name = "vagrant-ubuntu-jammy"
   end
 
-  # 端口映射
-  config.vm.network :forwarded_port, guest: 3000, host: 3000
-  config.vm.network :forwarded_port, guest: 9200, host: 9201
+  # 端口转发（示例）
+  config.vm.network "forwarded_port", guest: 3000, host: 3000
+  config.vm.network "forwarded_port", guest: 9200, host: 9201
 
-  # 使用共享目录
+  # 共享文件夹
   config.vm.synced_folder ".", "/vagrant"
 
-  # 使用 shell 脚本进行初始化
+  # Provision 脚本
   config.vm.provision "shell", path: "scripts/bootstrap.sh", privileged: false
 
-  # 触发器写法已变，改用新版 triggers
+  # 内置触发器，启动后执行脚本
   config.trigger.after :up do |trigger|
     trigger.name = "Run up.sh after vagrant up"
     trigger.run_remote = { inline: "bash /vagrant/scripts/up.sh" }
